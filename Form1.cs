@@ -114,6 +114,7 @@ public partial class Form1 : Form
         core.SetVirtualHostNameToFolderMapping("app.local", wwwroot, CoreWebView2HostResourceAccessKind.Allow);
 
         core.WebMessageReceived += (_, e) => OnWebMessage(e.WebMessageAsJson);
+        _web.KeyDown += (_, e) => { if (RunShortcut(e.KeyData)) e.Handled = true; };
 
         // A file dropped onto the WebView2 surface arrives as a file:// request — Chromium may route it as a
         // navigation, a new-window request, or (for non-renderable types like .md) a download. Catch all three.
@@ -140,6 +141,7 @@ public partial class Form1 : Form
         await loaded.Task;
 
         _ready = true;
+        _web.Focus(); // otherwise keys go to the form until the user clicks the page once
         if (_file != null) LoadFile(_file);
     }
 
@@ -147,6 +149,25 @@ public partial class Form1 : Form
     {
         if (_ready) await _web.CoreWebView2.ExecuteScriptAsync(script);
     }
+
+    // App shortcuts live here, not in the page: they must work wherever focus is (editor, read mode, menu bar).
+    // Two entry points reach this: ProcessCmdKey while a WinForms control has focus, and _web.KeyDown while the
+    // page has it (WebView2 forwards Ctrl/Alt/F-key presses there; Handled stops them reaching the page).
+    private bool RunShortcut(Keys keys)
+    {
+        switch (keys)
+        {
+            case Keys.Control | Keys.S: Js("editor.save()"); return true;
+            case Keys.Control | Keys.O: OpenDialog(); return true;
+            case Keys.F5: ReloadFromDisk(); return true;
+            case Keys.Control | Keys.E: if (!IsJson) Js("editor.toggleReadMode()"); return true;
+            case Keys.Shift | Keys.Alt | Keys.F: if (IsJson) Js("editor.formatJson()"); return true;
+        }
+        return false;
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData) =>
+        RunShortcut(keyData) || base.ProcessCmdKey(ref msg, keyData);
 
     // file:///C:/x.md → open in this viewer. Returns false for anything that is not an existing local file.
     private bool TryOpenLocal(string uri)
@@ -176,13 +197,6 @@ public partial class Form1 : Form
                 case "dirty":
                     _dirty = root.GetProperty("dirty").GetBoolean();
                     UpdateTitle();
-                    break;
-                case "cmd":
-                    switch (root.GetProperty("name").GetString())
-                    {
-                        case "open": OpenDialog(); break;
-                        case "reload": ReloadFromDisk(); break;
-                    }
                     break;
                 case "link":
                     OpenLink(root.GetProperty("href").GetString() ?? "");

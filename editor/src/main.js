@@ -364,6 +364,7 @@ function toggleReadMode() {
   if (readMode) {
     readEl.innerHTML = marked.parse(view.state.doc.toString());
     editorEl.hidden = true; readEl.hidden = false;
+    readEl.focus(); // the editor that had focus is now hidden; keep arrow/PgDn scrolling working
   } else {
     readEl.hidden = true; editorEl.hidden = false;
     view.focus();
@@ -372,13 +373,6 @@ function toggleReadMode() {
   return true;
 }
 
-const mdKeymap = [
-  { key: "Mod-s", run: doSave },
-  { key: "Mod-e", run: toggleReadMode },
-  { key: "Mod-o", run: () => { host.post({ type: "cmd", name: "open" }); return true; } },
-  { key: "F5", run: () => { host.post({ type: "cmd", name: "reload" }); return true; } },
-  { key: "Shift-Alt-f", run: () => formatJson() },
-];
 
 // ---------- JSON pretty print ----------
 // Re-indents by walking tokens and copying every string/number/literal verbatim. JSON.stringify(JSON.parse())
@@ -514,7 +508,8 @@ function createView(parent) {
       modeConf.of(modeExtensions(mode)),
       syntaxHighlighting(classHighlighter),
       folding,
-      keymap.of([...mdKeymap, ...foldKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+      // Save/open/reload/read mode/format are app shortcuts handled by the host (Form1.RunShortcut)
+      keymap.of([...foldKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       EditorView.updateListener.of(u => {
         if (u.docChanged) setDirty(u.state.doc.toString() !== savedText);
       }),

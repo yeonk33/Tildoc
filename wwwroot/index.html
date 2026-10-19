@@ -31,7 +31,7 @@
   #banner button { font: 13px var(--sans); padding: 3px 10px; cursor: pointer; }
 
   /* ---------- read mode (rendered) ---------- */
-  #content { flex: 1; overflow: auto; }
+  #content { flex: 1; overflow: auto; outline: none; }
   .markdown-body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 32px 45px; }
 
   /* ---------- edit mode (live preview) ---------- */
@@ -136,7 +136,7 @@
 </div>
 <div id="dropzone" hidden>여기에 놓으면 파일을 엽니다</div>
 <div id="editor"></div>
-<article id="content" class="markdown-body" hidden></article>
+<article id="content" class="markdown-body" tabindex="-1" hidden></article>
 <script>
   marked.setOptions({ gfm: true, breaks: false });
   const renderer = new marked.Renderer();
