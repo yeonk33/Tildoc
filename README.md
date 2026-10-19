@@ -44,6 +44,9 @@
 
 - 파일이 밖에서 바뀌면(git pull 등) 수정 중이 아닐 때는 조용히 새로고침, 수정 중이면 상단 배너로 선택
 - 저장 시 원본의 줄바꿈(CRLF/LF)과 BOM 유무를 그대로 유지
+- 오른쪽에 제목 목차가 뜨고, 누르면 그 제목으로 이동한다. 창이 좁으면 짧은 막대로 줄어들고 마우스를 올리면 펼쳐진다
+- 편집 ↔ 읽기 모드를 바꿔도 보던 위치가 그대로 유지된다
+- 시작할 때 새 버전을 확인해 오른쪽 아래에 알린다. `업데이트`를 누르면 받아서 설치하고 다시 열린다 (설치 파일로 설치한 경우. 포터블은 다운로드 페이지가 열린다). `Help -> Check for updates`로 직접 확인할 수도 있다
 - 시스템 다크 모드 자동 적용
 - `Settings -> App icon color`로 앱 아이콘 색 변경 (12색). 창, 작업 표시줄, 시작 메뉴/바탕화면/작업 표시줄 고정 바로가기, `.md` 파일 아이콘이 함께 바뀐다. 탐색기에서 보이는 `Tildoc.exe` 파일 아이콘만 기본색으로 남는다
 
@@ -138,6 +141,9 @@ Notes:
 
 - When the file changes on disk (e.g. `git pull`), it reloads silently if you have no unsaved edits; otherwise a banner lets you choose
 - Saving preserves the original line endings (CRLF/LF) and BOM
+- An outline of the headings sits on the right; click one to jump there. In a narrow window it shrinks to short bars and opens on hover
+- Switching between edit and read mode keeps the same part of the document on screen
+- On startup a newer version is announced at the bottom right. `Update` downloads and installs it, then reopens the app (installed copies; a portable copy opens the download page). `Help -> Check for updates` checks on demand
 - Follows the system dark mode
 - `Settings -> App icon color` changes the app icon color (12 colors). The window, taskbar, Start menu / desktop / pinned taskbar shortcuts and the `.md` file icon all change together. Only the icon of `Tildoc.exe` itself as seen in Explorer stays the default color
 
