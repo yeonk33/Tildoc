@@ -578,10 +578,10 @@ public partial class Form1 : Form
         var changed = false;
         try
         {
-            // Tildoc.md: our own ProgId. Applications\<exe>: what "Open with -> Always" points at. The installer re-points
-            // the old Applications\MDViewer.exe key at Tildoc.exe so an "Always" choice from the MDViewer days keeps working.
-            foreach (var key in new[] { @"Software\Classes\Tildoc.md", @"Software\Classes\Applications\Tildoc.exe",
-                                        @"Software\Classes\Applications\MDViewer.exe" })
+            // Tildoc.md / Tildoc.json: our own ProgIds. Applications\<exe>: what "Open with -> Always" points at. The installer
+            // re-points the old Applications\MDViewer.exe key at Tildoc.exe so an "Always" choice from the MDViewer days keeps working.
+            foreach (var key in new[] { @"Software\Classes\Tildoc.md", @"Software\Classes\Tildoc.json",
+                                        @"Software\Classes\Applications\Tildoc.exe", @"Software\Classes\Applications\MDViewer.exe" })
             {
                 using var k = Registry.CurrentUser.OpenSubKey(key, writable: true);
                 if (k == null) continue;

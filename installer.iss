@@ -9,6 +9,7 @@
 ; 파일 버전은 1.0.0.0 형식이라 끝의 .0을 뗀다
 #define AppVersion RemoveFileExt(GetVersionNumbersString("dist-release\" + AppExe))
 #define ProgId "Tildoc.md"
+#define JsonProgId "Tildoc.json"
 #define OldName "MDViewer"
 #define OldProgId "MDViewer.md"
 
@@ -47,6 +48,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "assoc"; Description: ".md 파일을 Tildoc으로 열기"
+; 따로 둔다: JSON은 다른 편집기로 여는 사람도 많다
+Name: "assocjson"; Description: ".json 파일을 Tildoc으로 열기"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 
 [Files]
@@ -82,10 +85,16 @@ Root: HKA; Subkey: "Software\Classes\.markdown"; ValueType: string; ValueName: "
 Root: HKA; Subkey: "Software\Classes\.markdown\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\.mdown"; ValueType: string; ValueName: ""; ValueData: "{#ProgId}"; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\.mdown\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\{#JsonProgId}"; ValueType: string; ValueName: ""; ValueData: "JSON File"; Flags: uninsdeletekey; Tasks: assocjson
+Root: HKA; Subkey: "Software\Classes\{#JsonProgId}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"; Tasks: assocjson
+Root: HKA; Subkey: "Software\Classes\{#JsonProgId}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""; Tasks: assocjson
+Root: HKA; Subkey: "Software\Classes\.json"; ValueType: string; ValueName: ""; ValueData: "{#JsonProgId}"; Flags: uninsdeletevalue; Tasks: assocjson
+Root: HKA; Subkey: "Software\Classes\.json\OpenWithProgids"; ValueType: string; ValueName: "{#JsonProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assocjson
 ; Windows "연결 프로그램 -> 항상"으로 고른 exe가 이 키를 쓴다. 예전 위치를 가리키면 설치 위치로 바로잡는다
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".md"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; ValueType: string; ValueName: ".json"; ValueData: ""
 
 ; MDViewer 정리: 옛 ProgId와 "연결 프로그램" 목록 항목 삭제
 Root: HKA; Subkey: "Software\Classes\{#OldProgId}"; ValueType: none; Flags: deletekey
