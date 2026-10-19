@@ -35,6 +35,8 @@
   /* #content is both the scroller and the article: it spans the window (scrollbar at the right edge) and its side
      padding centers an 890px text column (980 - 2*45). margin:auto would shrink it to its text in this flex column. */
   .markdown-body { box-sizing: border-box; min-width: 200px; padding: 32px max(45px, calc(50% - 445px)); }
+  /* same room below the last line as the editor has, so the end of a document sits at the same place in both modes */
+  #content { padding-bottom: 50vh; }
 
   /* ---------- edit mode (live preview) ---------- */
   #editor { flex: 1; min-height: 0; display: flex; }

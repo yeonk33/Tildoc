@@ -364,17 +364,117 @@ function toggleReadMode() {
   readMode = !readMode;
   const editorEl = document.getElementById("editor");
   const readEl = document.getElementById("content");
+  // keep the same part of the document on screen (measured before the current view is hidden)
   if (readMode) {
-    readEl.innerHTML = marked.parse(view.state.doc.toString());
+    const line = editTopLine();
+    renderRead(view.state.doc.toString());
     editorEl.hidden = true; readEl.hidden = false;
-    readEl.focus(); // the editor that had focus is now hidden; keep arrow/PgDn scrolling working
+    scrollReadToLine(line);
+    readEl.focus({ preventScroll: true }); // the editor that had focus is now hidden; keep arrow/PgDn scrolling working
   } else {
+    const line = readTopLine();
     readEl.hidden = true; editorEl.hidden = false;
     view.focus();
+    scrollEditToLine(line);
   }
   refreshToc();
   host.post({ type: "mode", readMode });
   return true;
+}
+
+// ---------- read mode rendering + scroll sync between modes ----------
+// Every top-level block of the rendered page carries data-line / data-end (its source lines, end exclusive), so a
+// position can be carried across: "line 120 and a third" at the top of one view becomes the top of the other.
+// Inside a block the position is interpolated over its own lines; the gap after it maps to the blank lines after it.
+function renderRead(text) {
+  const tokens = marked.lexer(text);
+  const frag = document.createDocumentFragment();
+  const tpl = document.createElement("template");
+  let line = 1;
+  for (const t of tokens) {
+    if (t.type !== "space") {
+      const one = [t];
+      one.links = tokens.links; // reference-style links are defined elsewhere in the document
+      tpl.innerHTML = marked.parser(one);
+      const el = tpl.content.firstElementChild;
+      if (el) {
+        el.dataset.line = line;
+        el.dataset.end = line + t.raw.replace(/\n+$/, "").split("\n").length;
+      }
+      frag.append(tpl.content);
+    }
+    line += (t.raw.match(/\n/g) || []).length;
+  }
+  document.getElementById("content").replaceChildren(frag);
+}
+
+const readBlocks = () => [...document.getElementById("content").querySelectorAll(":scope > [data-line]")];
+const clamp01 = x => Math.max(0, Math.min(1, x));
+// the two ranges of block i: its own box over its own lines, then the gap down to the next block
+function readSpans(blocks, i) {
+  const a = blocks[i], b = blocks[i + 1], r = a.getBoundingClientRect();
+  const nextTop = b ? b.getBoundingClientRect().top : r.bottom;
+  const line = +a.dataset.line, end = +a.dataset.end, next = b ? +b.dataset.line : view.state.doc.lines + 1;
+  return { top: r.top, bottom: r.bottom, nextTop, line, end, next };
+}
+
+// Fractional source line at the top edge of the editor, e.g. 12.5 = halfway through line 12
+function editTopLine() {
+  const y = view.scrollDOM.getBoundingClientRect().top - view.documentTop;
+  const block = view.lineBlockAtHeight(y);
+  return view.state.doc.lineAt(block.from).number + clamp01((y - block.top) / (block.height || 1));
+}
+
+function scrollEditToLine(target) {
+  const doc = view.state.doc;
+  const n = Math.min(Math.max(1, Math.floor(target)), doc.lines);
+  const frac = target - Math.floor(target);
+  if (target <= 1) { view.scrollDOM.scrollTop = 0; return; }
+  const from = doc.line(n).from;
+  // exact inverse of editTopLine; repeated on the next frame because lines that come into view get measured
+  // and the estimated heights above them change
+  const align = () => {
+    const b = view.lineBlockAt(from);
+    const docOffset = view.documentTop - view.scrollDOM.getBoundingClientRect().top + view.scrollDOM.scrollTop;
+    view.scrollDOM.scrollTop = b.top + frac * b.height + docOffset;
+  };
+  view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "start", yMargin: 0 }) });
+  // then make sure typing does not jump back to an off-screen cursor
+  requestAnimationFrame(() => { align(); requestAnimationFrame(() => {
+    align();
+    const top = view.scrollDOM.getBoundingClientRect().top - view.documentTop;
+    const first = view.lineBlockAtHeight(top), last = view.lineBlockAtHeight(top + view.scrollDOM.clientHeight);
+    const head = view.state.selection.main.head;
+    if (head < first.from || head > last.to) {
+      const anchor = first.top >= top - 1 || first.to >= doc.length ? first.from : first.to + 1;
+      view.dispatch({ selection: { anchor } });
+    }
+  }); });
+}
+
+function readTopLine() {
+  const c = document.getElementById("content");
+  const top = c.getBoundingClientRect().top;
+  const blocks = readBlocks();
+  let i = -1; // last block that starts at or above the top edge
+  while (i + 1 < blocks.length && blocks[i + 1].getBoundingClientRect().top <= top + 1) i++;
+  if (i < 0) return 1;
+  const s = readSpans(blocks, i);
+  if (top < s.bottom) return s.line + clamp01((top - s.top) / ((s.bottom - s.top) || 1)) * (s.end - s.line);
+  return s.end + clamp01((top - s.bottom) / ((s.nextTop - s.bottom) || 1)) * (s.next - s.end);
+}
+
+function scrollReadToLine(target) {
+  const c = document.getElementById("content");
+  const blocks = readBlocks();
+  let i = -1; // last block starting at or before the target line
+  while (i + 1 < blocks.length && +blocks[i + 1].dataset.line <= target) i++;
+  if (target <= 1 || i < 0) { c.scrollTop = 0; return; }
+  const base = c.scrollTop - c.getBoundingClientRect().top; // viewport y -> scroll offset
+  const s = readSpans(blocks, i);
+  c.scrollTop = base + (target < s.end
+    ? s.top + clamp01((target - s.line) / ((s.end - s.line) || 1)) * (s.bottom - s.top)
+    : s.bottom + clamp01((target - s.end) / ((s.next - s.end) || 1)) * (s.nextTop - s.bottom));
 }
 
 
@@ -638,7 +738,7 @@ window.editor = {
     hideDropzone();
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, selection: { anchor: 0 } });
     setDirty(false);
-    if (readMode) document.getElementById("content").innerHTML = marked.parse(text);
+    if (readMode) renderRead(text);
     view.scrollDOM.scrollTop = 0;
     refreshToc();
     if (!readMode) view.focus();
@@ -654,7 +754,7 @@ window.editor = {
                       selection: { anchor: Math.min(sel, text.length) } });
       view.scrollDOM.scrollTop = top;
       setDirty(false);
-      if (readMode) document.getElementById("content").innerHTML = marked.parse(text);
+      if (readMode) renderRead(text);
     } else {
       pendingExternal = text;
       showBanner();
