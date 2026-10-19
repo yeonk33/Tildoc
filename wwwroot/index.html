@@ -148,6 +148,16 @@
   }
   #content :is(h1,h2,h3,h4,h5,h6) { scroll-margin-top: 16px; }
 
+  /* ---------- update notice (bottom right) ---------- */
+  #update-toast { position: fixed; right: 24px; bottom: 24px; z-index: 6; display: flex; align-items: center; gap: 10px;
+                  padding: 10px 10px 10px 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+                  border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.15); font: 14px var(--sans); }
+  #update-toast button { font: 13px var(--sans); border-radius: 6px; cursor: pointer; }
+  #update-go { padding: 5px 12px; border: none; background: var(--link); color: #fff; }
+  #update-go:disabled { opacity: .6; cursor: default; }
+  #update-close { padding: 2px 8px; border: none; background: none; color: var(--muted); font-size: 18px !important; line-height: 1; }
+  #update-close:hover { color: var(--fg); }
+
   /* Shown while a file is dragged over the window. Not editable, handles nothing — so the drop falls through to
      the browser's default (a file:// navigation) which the host intercepts. Without it CodeMirror would swallow
      the drop and paste the file's text into the document. */
@@ -165,6 +175,11 @@
   <button id="banner-keep">내 편집 유지</button>
 </div>
 <div id="dropzone" hidden>여기에 놓으면 파일을 엽니다</div>
+<div id="update-toast" hidden>
+  <span id="update-text"></span>
+  <button id="update-go">업데이트</button>
+  <button id="update-close" title="닫기">×</button>
+</div>
 <nav id="toc" hidden><div class="toc-list"></div></nav>
 <div id="editor"></div>
 <article id="content" class="markdown-body" tabindex="-1" hidden></article>

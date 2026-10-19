@@ -766,7 +766,26 @@ window.editor = {
   save: doSave,
   toggleReadMode,
   formatJson,
+  /** A newer release exists (host checked GitHub). Shown bottom right until dismissed. */
+  showUpdate(version) {
+    updateOffer = `새 버전 v${version}이 있습니다`;
+    document.getElementById("update-text").textContent = updateOffer;
+    document.getElementById("update-go").disabled = false;
+    document.getElementById("update-toast").hidden = false;
+  },
+  /** Progress text while the host downloads the update; null = failed, back to the offer. */
+  updateStatus(text) {
+    const go = document.getElementById("update-go");
+    if (text == null) { go.disabled = false; document.getElementById("update-text").textContent = updateOffer; return; }
+    document.getElementById("update-text").textContent = text;
+    go.disabled = true;
+    document.getElementById("update-toast").hidden = false;
+  },
 };
+
+let updateOffer = "";
+document.getElementById("update-go").addEventListener("click", () => host.post({ type: "update" }));
+document.getElementById("update-close").addEventListener("click", () => { document.getElementById("update-toast").hidden = true; });
 
 function showBanner() {
   const b = document.getElementById("banner");

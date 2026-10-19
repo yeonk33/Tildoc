@@ -79,6 +79,12 @@ public partial class Form1 : Form
         settingsMenu.DropDownItems.Add(colorMenu);
         menu.Items.Add(settingsMenu);
 
+        var helpMenu = new ToolStripMenuItem("&Help");
+        helpMenu.DropDownItems.Add("Check for &updates...", null, async (_, _) => await CheckForUpdate(manual: true));
+        helpMenu.DropDownItems.Add(new ToolStripSeparator());
+        helpMenu.DropDownItems.Add($"{AppName} v{CurrentVersion}").Enabled = false;
+        menu.Items.Add(helpMenu);
+
         MainMenuStrip = menu;
         Controls.Add(_web);
         Controls.Add(menu);
@@ -97,6 +103,7 @@ public partial class Form1 : Form
             await InitWeb();
             // An installer re-run resets shortcut/file icons to the exe's own; put the chosen color back
             ApplyShellIcons();
+            await CheckForUpdate(manual: false);
         };
     }
 
@@ -169,6 +176,105 @@ public partial class Form1 : Form
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData) =>
         RunShortcut(keyData) || base.ProcessCmdKey(ref msg, keyData);
 
+    // ---------- updates ----------
+    // On startup the latest GitHub release is checked (only its version is asked for; nothing is sent). A newer one
+    // shows a toast in the page; Help > Check for updates does the same on demand. Updating downloads the setup and
+    // runs it silently over this install, which closes this window and starts the new version (installer.iss [Run]).
+    // A portable copy (not where the installer put it) gets the release page instead.
+    private const string ReleaseApi = "https://api.github.com/repos/yeonk33/Tildoc/releases/latest";
+    private const string InstallerAppId = "{6F3C2A0E-8B4D-4E21-9C7A-2D5B1E9F4A63}"; // installer.iss AppId
+    private static readonly HttpClient Http = CreateHttp();
+    private record UpdateInfo(Version Version, string PageUrl, string? SetupUrl);
+    private UpdateInfo? _update;
+    private bool _updating;
+
+    private static string CurrentVersion => (typeof(Form1).Assembly.GetName().Version ?? new Version(0, 0, 0)).ToString(3);
+
+    private static HttpClient CreateHttp()
+    {
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"{AppName}/{CurrentVersion}"); // GitHub's API requires one
+        return http;
+    }
+
+    private async Task CheckForUpdate(bool manual)
+    {
+        UpdateInfo? latest;
+        try
+        {
+            using var doc = JsonDocument.Parse(await Http.GetStringAsync(ReleaseApi));
+            var root = doc.RootElement;
+            if (!Version.TryParse(root.GetProperty("tag_name").GetString()?.TrimStart('v'), out var version)) return;
+            string? setup = null;
+            foreach (var asset in root.GetProperty("assets").EnumerateArray())
+                if (asset.GetProperty("name").GetString() is { } n && n.StartsWith($"{AppName}-Setup-") && n.EndsWith(".exe"))
+                    setup = asset.GetProperty("browser_download_url").GetString();
+            latest = new UpdateInfo(version, root.GetProperty("html_url").GetString() ?? "", setup);
+        }
+        catch (Exception ex)
+        {
+            // offline or GitHub unreachable: stay quiet at startup
+            if (manual) MessageBox.Show(this, $"업데이트를 확인하지 못했습니다.\n\n{ex.Message}", AppName,
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (latest.Version <= Version.Parse(CurrentVersion))
+        {
+            if (manual) MessageBox.Show(this, $"최신 버전입니다 (v{CurrentVersion}).", AppName,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        _update = latest;
+        var v = latest.Version.ToString(3);
+        if (!manual) { Js($"editor.showUpdate('{v}')"); return; }
+        if (MessageBox.Show(this, $"새 버전 v{v}이 있습니다 (현재 v{CurrentVersion}).\n지금 업데이트할까요?", AppName,
+                MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            StartUpdate();
+    }
+
+    private async void StartUpdate()
+    {
+        var update = _update;
+        if (update == null || _updating) return;
+        if (update.SetupUrl == null || !IsInstalledCopy())
+        {
+            Process.Start(new ProcessStartInfo(update.PageUrl) { UseShellExecute = true });
+            return;
+        }
+        if (!ConfirmDiscard()) return;
+
+        _updating = true;
+        Js("editor.updateStatus('업데이트를 받는 중...')");
+        var setup = Path.Combine(Path.GetTempPath(), $"{AppName}-Setup-{update.Version.ToString(3)}.exe");
+        try
+        {
+            await using (var src = await Http.GetStreamAsync(update.SetupUrl))
+            await using (var dst = File.Create(setup))
+                await src.CopyToAsync(dst);
+        }
+        catch (Exception ex)
+        {
+            _updating = false;
+            Js("editor.updateStatus(null)");
+            MessageBox.Show(this, $"업데이트를 받지 못했습니다.\n\n{ex.Message}", AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        // /DIR keeps a custom install folder (the installer itself does not reuse the previous one: UsePreviousAppDir=no).
+        // No trailing backslash: \" would escape the closing quote.
+        var dir = AppContext.BaseDirectory.TrimEnd('\\');
+        Process.Start(setup, $"/SILENT /SUPPRESSMSGBOXES /NORESTART /DIR=\"{dir}\"");
+        Close();
+    }
+
+    // True when this exe is the one the installer put in place (a portable copy has to be replaced by hand)
+    private static bool IsInstalledCopy()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey($@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{InstallerAppId}_is1");
+        return key?.GetValue("InstallLocation") is string loc &&
+               string.Equals(loc.TrimEnd('\\'), AppContext.BaseDirectory.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+    }
+
     // file:///C:/x.md → open in this viewer. Returns false for anything that is not an existing local file.
     private bool TryOpenLocal(string uri)
     {
@@ -200,6 +306,9 @@ public partial class Form1 : Form
                     break;
                 case "link":
                     OpenLink(root.GetProperty("href").GetString() ?? "");
+                    break;
+                case "update":
+                    StartUpdate();
                     break;
                 case "error":
                     MessageBox.Show(this, root.GetProperty("message").GetString(), root.GetProperty("title").GetString(),

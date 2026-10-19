@@ -100,6 +100,8 @@ Root: HKA; Subkey: "Software\Classes\Applications\{#OldName}.exe\DefaultIcon"; V
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; In-app update runs this setup with /SILENT after closing the app: start the new version again
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 
 [Code]
 // MDViewer 시절 "연결 프로그램 -> 항상" 선택이 남아 있는지
