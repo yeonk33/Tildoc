@@ -9,7 +9,10 @@ import {
 } from "@codemirror/view";
 import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { syntaxTree, syntaxHighlighting, indentUnit, codeFolding, foldGutter, foldKeymap } from "@codemirror/language";
+import {
+  syntaxTree, ensureSyntaxTree, syntaxHighlighting, indentUnit,
+  codeFolding, foldGutter, foldKeymap, foldedRanges, unfoldEffect,
+} from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { json } from "@codemirror/lang-json";
@@ -369,6 +372,7 @@ function toggleReadMode() {
     readEl.hidden = true; editorEl.hidden = false;
     view.focus();
   }
+  refreshToc();
   host.post({ type: "mode", readMode });
   return true;
 }
@@ -511,17 +515,115 @@ function createView(parent) {
       // Save/open/reload/read mode/format are app shortcuts handled by the host (Form1.RunShortcut)
       keymap.of([...foldKeymap, indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       EditorView.updateListener.of(u => {
-        if (u.docChanged) setDirty(u.state.doc.toString() !== savedText);
+        if (u.docChanged) { setDirty(u.state.doc.toString() !== savedText); scheduleToc(); }
       }),
     ],
   });
   return new EditorView({ state, parent });
 }
 
+// ---------- outline (table of contents) ----------
+// Headings listed at the right edge; clicking one jumps there. Edit mode reads the syntax tree and read mode the
+// rendered <h1>-<h6>, so each list matches exactly what it scrolls. Hidden for JSON and for fewer than 2 headings.
+const tocEl = document.getElementById("toc");
+let tocItems = []; // edit mode: { level, text, pos }; read mode: { level, text, el }
+let tocTimer = 0, tocRaf = 0;
+// The heading last clicked in the outline stays active until the user scrolls or types themselves. Without it,
+// clicking a heading near the end highlights a different one: the page can't scroll it to the top.
+let tocPinned = -1;
+
+// "## **Setup** [guide](x.md) ##" -> "Setup guide"
+function headingText(src) {
+  const t = src.replace(/^#{1,6}[ \t]*/, "").replace(/[ \t]+#+[ \t]*$/, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\*\*|__|~~|`|\*/g, "").trim();
+  return t || "(제목 없음)";
+}
+
+function collectHeadings() {
+  if (readMode) {
+    return [...document.getElementById("content").querySelectorAll("h1,h2,h3,h4,h5,h6")]
+      .map(el => ({ level: +el.tagName[1], text: el.textContent.trim() || "(제목 없음)", el }));
+  }
+  const state = view.state, out = [];
+  const tree = ensureSyntaxTree(state, state.doc.length, 200) || syntaxTree(state);
+  tree.iterate({
+    enter(n) {
+      const m = /^(ATX|Setext)Heading(\d)$/.exec(n.name);
+      if (!m) return;
+      const to = m[1] === "Setext" ? state.doc.lineAt(n.from).to : n.to; // setext: text line only, not the ===
+      out.push({ level: +m[2], text: headingText(state.sliceDoc(n.from, to)), pos: n.from });
+      return false;
+    },
+  });
+  return out;
+}
+
+function refreshToc() {
+  clearTimeout(tocTimer);
+  tocPinned = -1;
+  const all = mode === "json" ? [] : collectHeadings();
+  tocEl.hidden = all.length < 2;
+  if (tocEl.hidden) { tocItems = []; return; }
+  // three depths at most, counted from the biggest heading actually used (a doc of only ## and ### starts flush)
+  const top = Math.min(...all.map(h => h.level));
+  tocItems = all.filter(h => h.level - top < 3);
+  tocEl.firstElementChild.replaceChildren(...tocItems.map((h, i) => {
+    const item = document.createElement("div");
+    item.className = "toc-item"; item.dataset.depth = h.level - top; item.dataset.i = i; item.title = h.text;
+    const dash = document.createElement("span"); dash.className = "toc-dash";
+    const text = document.createElement("span"); text.className = "toc-text"; text.textContent = h.text;
+    item.append(dash, text);
+    return item;
+  }));
+  updateTocActive();
+}
+function scheduleToc() { clearTimeout(tocTimer); tocTimer = setTimeout(refreshToc, 250); }
+
+// The active heading is the last one above a line just below the top of the visible area
+function updateTocActive() {
+  if (tocEl.hidden) return;
+  let active = 0;
+  const scroller = readMode ? document.getElementById("content") : view.scrollDOM;
+  const probe = scroller.getBoundingClientRect().top + 40;
+  if (tocPinned >= 0 && tocPinned < tocItems.length) {
+    active = tocPinned;
+  } else if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+    active = tocItems.length - 1; // at the bottom: the last sections may be too short to ever reach the top
+  } else if (readMode) {
+    tocItems.forEach((h, i) => { if (h.el.getBoundingClientRect().top <= probe) active = i; });
+  } else {
+    const pos = view.lineBlockAtHeight(probe - view.documentTop).from;
+    tocItems.forEach((h, i) => { if (h.pos <= pos) active = i; });
+  }
+  for (const c of tocEl.firstElementChild.children) c.classList.toggle("active", +c.dataset.i === active);
+}
+function onTocScroll() {
+  if (!tocRaf) tocRaf = requestAnimationFrame(() => { tocRaf = 0; updateTocActive(); });
+}
+
+tocEl.addEventListener("mousedown", e => e.preventDefault()); // clicking the outline must not take focus away
+tocEl.addEventListener("click", e => {
+  const item = e.target.closest(".toc-item");
+  if (!item) return;
+  const h = tocItems[+item.dataset.i];
+  tocPinned = +item.dataset.i;
+  if (readMode) { h.el.scrollIntoView({ block: "start" }); updateTocActive(); return; }
+  // a heading inside a folded section is hidden; open those folds first
+  const unfold = [];
+  foldedRanges(view.state).between(h.pos, h.pos, (from, to) => { if (from < h.pos) unfold.push(unfoldEffect.of({ from, to })); });
+  view.dispatch({ selection: { anchor: h.pos }, effects: [...unfold, EditorView.scrollIntoView(h.pos, { y: "start", yMargin: 24 })] });
+  view.focus();
+});
+
 // ---------- public API used by the host ----------
 window.editor = {
   init() {
     view = createView(document.getElementById("editor"));
+    for (const el of [view.scrollDOM, document.getElementById("content")]) {
+      el.addEventListener("scroll", onTocScroll, { passive: true });
+      // user-driven movement releases the outline click (scroll events alone can't tell user from scrollIntoView)
+      for (const type of ["wheel", "keydown", "pointerdown"]) el.addEventListener(type, () => { tocPinned = -1; }, { passive: true });
+    }
     return view;
   },
   /** Replace the document (new file or external reload). mode: "markdown" | "json" (default markdown). */
@@ -538,6 +640,7 @@ window.editor = {
     setDirty(false);
     if (readMode) document.getElementById("content").innerHTML = marked.parse(text);
     view.scrollDOM.scrollTop = 0;
+    refreshToc();
     if (!readMode) view.focus();
   },
   /** The file changed on disk. Apply silently if we have no unsaved edits; otherwise offer a reload. */
